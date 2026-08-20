@@ -1,0 +1,24 @@
+{
+  "name": "veil-local-chat",
+  "productName": "Veil 本地对话",
+  "version": "1.4.0",
+  "private": true,
+  "description": "A privacy-first desktop coding assistant for Ollama and OpenAI-compatible APIs.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lichengding0813/veil-local-assistant.git"
+  },
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.cjs",
+    "check": "node --check main.cjs && node --check preload.cjs && node --check src/renderer.js && node --check src/markdown.js && npm test"
+  },
+  "devDependencies": {
+    "electron": "22.3.27"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

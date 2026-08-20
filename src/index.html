@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'">
+    <title>Veil 本地对话</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="window-drag-region" aria-hidden="true"></div>
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="m9 7-5 5 5 5M15 7l5 5-5 5"/></svg>
+          </div>
+          <strong>LOCAL LLM</strong>
+        </div>
+
+        <button class="new-chat-button" id="new-chat-button" type="button">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          新建对话
+          <kbd>⌘ N</kbd>
+        </button>
+
+        <div class="conversation-section">
+          <div class="section-label">会话</div>
+          <nav class="conversation-list" id="conversation-list" aria-label="最近对话"></nav>
+          <button class="archive-section-button" id="archive-section-button" type="button" aria-expanded="false">
+            <span>归档</span>
+            <small id="archive-count">0</small>
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 10 3 3 3-3"/></svg>
+          </button>
+          <nav class="conversation-list archived-list" id="archived-list" aria-label="已归档对话" hidden></nav>
+        </div>
+
+        <div class="sidebar-footer">
+          <button class="security-card" id="security-card" type="button">
+            <span class="security-icon">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 19 6v5c0 4.5-2.9 8.5-7 9.8C7.9 19.5 5 15.5 5 11V6l7-3Z"/><path d="M9 12.2 11 14l4-4"/></svg>
+            </span>
+            <span><strong id="security-card-label">录屏保护：开启</strong></span>
+          </button>
+        </div>
+      </aside>
+
+      <main class="main-panel">
+        <header class="topbar">
+          <button class="icon-button history-toggle-button" id="history-toggle-button" type="button" title="折叠或展开历史记录" aria-label="折叠或展开历史记录" aria-pressed="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h16v14H4zM9 5v14"/></svg>
+          </button>
+          <button class="icon-button compact-new-chat-button" id="compact-new-chat-button" type="button" title="新建对话 (⌘N)" aria-label="新建对话">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <div class="conversation-heading">
+            <h1 id="conversation-title">新对话</h1>
+          </div>
+          <div class="model-control">
+            <div class="connection-pill" id="connection-pill" aria-live="polite">
+              <span class="status-dot"></span>
+              <span id="connection-label">正在检测</span>
+            </div>
+            <label class="model-select-wrap">
+              <span class="sr-only">选择模型</span>
+              <select id="model-select" aria-label="选择本地模型">
+                <option value="">检测本地模型…</option>
+              </select>
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+            </label>
+            <button class="icon-button" id="refresh-button" type="button" title="重新检测模型" aria-label="重新检测模型">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6.1 6.5L4 9m16 6-2.1 2.5A7 7 0 0 1 5.5 15"/></svg>
+            </button>
+            <button class="icon-button" id="assistant-mode-button" type="button" title="助手模式：透明并置顶" aria-label="切换透明置顶助手模式" aria-pressed="false">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 6 6M8 8l8 8M14 4l6 6-4 1-5 5-1 4-6-6 4-1 5-5 1-4Z"/></svg>
+            </button>
+            <button class="icon-button protection-button" id="protection-button" type="button" title="切换录屏保护" aria-label="切换录屏保护" aria-pressed="true">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 19 6v5c0 4.5-2.9 8.5-7 9.8C7.9 19.5 5 15.5 5 11V6l7-3Z"/><path d="M9 12.2 11 14l4-4"/></svg>
+            </button>
+            <button class="icon-button" id="settings-button" type="button" title="连接设置" aria-label="连接设置">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></svg>
+            </button>
+          </div>
+        </header>
+
+        <div class="offline-banner" id="offline-banner" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 2.6 17.2A2 2 0 0 0 4.3 20h15.4a2 2 0 0 0 1.7-2.8L13.7 3.9a2 2 0 0 0-3.4 0Z"/></svg>
+          <span id="offline-message">未连接到本地模型服务</span>
+          <button id="offline-settings-button" type="button">检查设置</button>
+        </div>
+
+        <section class="messages" id="messages" aria-live="polite">
+          <div class="empty-state" id="empty-state">
+            <div class="empty-mark" aria-hidden="true">
+              <svg viewBox="0 0 32 32"><path d="M6 8h20v16H6z"/><path d="m10 13 3 3-3 3M16 19h6"/></svg>
+            </div>
+            <h2>开始编程</h2>
+          </div>
+          <div class="message-list" id="message-list"></div>
+        </section>
+
+        <footer class="composer-area">
+          <div class="generation-progress" id="generation-progress" role="status" aria-live="polite" aria-atomic="true" hidden>
+            <span class="generation-spinner" aria-hidden="true"></span>
+            <span class="generation-copy">
+              <strong id="generation-stage">正在连接 Ollama</strong>
+              <small id="generation-detail">模型仍在工作</small>
+            </span>
+            <time id="generation-elapsed">0秒</time>
+          </div>
+          <div class="composer" id="composer">
+            <textarea id="message-input" rows="1" placeholder="输入问题或代码…" aria-label="消息内容"></textarea>
+            <div class="composer-footer">
+              <button class="think-toggle" id="think-toggle" type="button" role="switch" aria-checked="false" disabled>
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 22h4"/><path d="M8.2 14.5A6 6 0 1 1 15.8 14.5C15.2 15 15 16 15 17H9c0-1-.2-2-.8-2.5Z"/></svg>
+                <span id="think-label">检测思考能力</span>
+              </button>
+              <button class="stop-button" id="stop-button" type="button" hidden>
+                <span></span> 停止生成
+              </button>
+              <button class="send-button" id="send-button" type="button" disabled aria-label="发送消息">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 7-7 7 7M12 19V5"/></svg>
+              </button>
+            </div>
+          </div>
+        </footer>
+      </main>
+    </div>
+    <button class="sidebar-scrim" id="sidebar-scrim" type="button" aria-label="关闭历史记录" hidden></button>
+
+    <dialog class="settings-dialog" id="settings-dialog">
+      <form method="dialog" id="settings-form">
+        <div class="dialog-header">
+          <div>
+            <h2>模型与助手设置</h2>
+          </div>
+          <button class="icon-button" value="cancel" aria-label="关闭设置" formnovalidate>
+            <svg viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></svg>
+          </button>
+        </div>
+        <div class="settings-scroll">
+          <section class="settings-section">
+            <h3>模型连接</h3>
+            <label class="field-label" for="provider-select">服务类型</label>
+            <select class="text-field" id="provider-select" name="provider">
+              <option value="ollama">本地 · Ollama</option>
+              <option value="gemini">API · Google Gemini</option>
+              <option value="deepseek">API · DeepSeek</option>
+              <option value="openai">API · OpenAI 兼容</option>
+            </select>
+
+            <label class="field-label" for="endpoint-input">服务地址</label>
+            <input class="text-field" id="endpoint-input" name="endpoint" type="url" required spellcheck="false">
+
+            <div id="api-settings" hidden>
+              <label class="field-label" for="api-model-input">模型名称</label>
+              <input class="text-field" id="api-model-input" name="model" type="text" spellcheck="false" autocomplete="off">
+
+              <label class="field-label" for="api-key-input">API Key</label>
+              <input class="text-field" id="api-key-input" name="apiKey" type="password" spellcheck="false" autocomplete="new-password" placeholder="留空则保留已保存的密钥">
+              <div class="secret-status-row">
+                <small id="api-key-status">尚未保存密钥</small>
+                <label><input id="clear-api-key" type="checkbox"> 删除已保存的密钥</label>
+              </div>
+              <p class="field-note">密钥保存在本机应用数据中；macOS 支持时使用系统安全存储加密，不会写入项目或对话记录。</p>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>助手窗口</h3>
+            <label class="setting-toggle"><input id="transparent-toggle" type="checkbox"><span>背景透明</span><small>降低背景不透明度，适合放在屏幕角落</small></label>
+            <label class="setting-toggle"><input id="always-on-top-toggle" type="checkbox"><span>窗口置顶</span><small>始终显示在其他普通窗口上方</small></label>
+            <label class="setting-toggle"><input id="content-protection-toggle" type="checkbox"><span>录屏保护</span><small>尝试阻止兼容的截屏和录屏接口捕获窗口</small></label>
+          </section>
+
+          <section class="settings-section">
+            <h3>系统提示词</h3>
+            <label class="field-label" for="system-prompt-input">留空使用内置编程提示词</label>
+            <textarea class="text-field prompt-field" id="system-prompt-input" rows="7" maxlength="20000" placeholder="在这里输入自定义系统提示词…"></textarea>
+            <button class="inline-button" id="restore-system-prompt-button" type="button">恢复内置提示词</button>
+          </section>
+        </div>
+        <div class="dialog-actions">
+          <button class="secondary-button" value="cancel" formnovalidate>取消</button>
+          <button class="primary-button" id="save-settings-button" value="default">保存并检测</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog class="security-dialog" id="security-dialog">
+      <form method="dialog">
+        <div class="security-hero">
+          <div class="large-shield"><svg viewBox="0 0 32 32"><path d="M16 3 27 7v8c0 6.8-4.6 12.9-11 14.6C9.6 27.9 5 21.8 5 15V7l11-4Z"/><path d="M11.5 16.2 14.5 19l6.4-6.6"/></svg></div>
+          <h2 id="security-dialog-title">录屏保护已开启</h2>
+        </div>
+        <div class="security-details">
+          <span>保护方式</span><strong>setContentProtection(true)</strong>
+          <span>Electron</span><strong id="electron-version">—</strong>
+          <span>当前状态</span><strong class="success-text" id="security-current-state">正在保护</strong>
+        </div>
+        <p class="compatibility-note">保护效果由 macOS 版本及录屏软件采用的捕获接口决定；新版 macOS 的部分 ScreenCaptureKit 捕获方式可能仍能录到窗口。</p>
+        <button class="primary-button full-button" id="security-toggle-button" type="button">关闭录屏保护</button>
+        <button class="secondary-button full-button dialog-close-button" value="default">关闭</button>
+      </form>
+    </dialog>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="markdown.js"></script>
+    <script src="renderer.js"></script>
+  </body>
+</html>
