@@ -1,7 +1,7 @@
 {
   "name": "veil-local-chat",
   "productName": "Veil 本地对话",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "private": true,
   "description": "A privacy-first desktop coding assistant for Ollama and OpenAI-compatible APIs.",
   "license": "MIT",

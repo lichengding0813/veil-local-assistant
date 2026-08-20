@@ -71,7 +71,7 @@
             <button class="icon-button" id="refresh-button" type="button" title="重新检测模型" aria-label="重新检测模型">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6v5h-5M4 18v-5h5"/><path d="M18.5 9A7 7 0 0 0 6.1 6.5L4 9m16 6-2.1 2.5A7 7 0 0 1 5.5 15"/></svg>
             </button>
-            <button class="icon-button" id="assistant-mode-button" type="button" title="助手模式：透明并置顶" aria-label="切换透明置顶助手模式" aria-pressed="false">
+            <button class="icon-button" id="assistant-mode-button" type="button" title="透明提词器模式（Esc 退出）" aria-label="切换透明提词器模式" aria-pressed="false">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 3 6 6M8 8l8 8M14 4l6 6-4 1-5 5-1 4-6-6 4-1 5-5 1-4Z"/></svg>
             </button>
             <button class="icon-button protection-button" id="protection-button" type="button" title="切换录屏保护" aria-label="切换录屏保护" aria-pressed="true">
@@ -89,6 +89,7 @@
           <button id="offline-settings-button" type="button">检查设置</button>
         </div>
 
+        <div class="assistant-drag-region" aria-hidden="true"></div>
         <section class="messages" id="messages" aria-live="polite">
           <div class="empty-state" id="empty-state">
             <div class="empty-mark" aria-hidden="true">
@@ -168,7 +169,7 @@
 
           <section class="settings-section">
             <h3>助手窗口</h3>
-            <label class="setting-toggle"><input id="transparent-toggle" type="checkbox"><span>背景透明</span><small>降低背景不透明度，适合放在屏幕角落</small></label>
+            <label class="setting-toggle"><input id="transparent-toggle" type="checkbox"><span>透明提词器模式</span><small>只保留输入框和最新回复；按 Esc 或 ⌘⇧A 退出</small></label>
             <label class="setting-toggle"><input id="always-on-top-toggle" type="checkbox"><span>窗口置顶</span><small>始终显示在其他普通窗口上方</small></label>
             <label class="setting-toggle"><input id="content-protection-toggle" type="checkbox"><span>录屏保护</span><small>尝试阻止兼容的截屏和录屏接口捕获窗口</small></label>
           </section>

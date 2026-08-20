@@ -62,6 +62,7 @@ function applyWindowPreferences(window) {
   window.setAlwaysOnTop(windowPreferences.alwaysOnTop, 'floating');
   window.setBackgroundColor(windowPreferences.transparent ? '#00000000' : '#1e1e1e');
   if (process.platform === 'darwin') {
+    window.setWindowButtonVisibility(!windowPreferences.transparent);
     window.setVisibleOnAllWorkspaces(windowPreferences.alwaysOnTop, { visibleOnFullScreen: true });
   }
 }

@@ -201,6 +201,7 @@ function formatRelativeTime(timestamp) {
 }
 
 function showToast(message) {
+  if (appState.transparent) return;
   clearTimeout(toastTimer);
   elements.toast.textContent = message;
   elements.toast.classList.add('visible');
@@ -316,6 +317,8 @@ function renderSidebar() {
 
 function renderMessages(keepScroll = false) {
   const conversation = activeConversation();
+  const latestAssistantId = [...conversation.messages].reverse()
+    .find((message) => message.role === 'assistant')?.id;
   elements.conversationTitle.textContent = conversation.title;
   elements.emptyState.hidden = conversation.messages.length > 0;
   elements.messageList.replaceChildren();
@@ -323,6 +326,7 @@ function renderMessages(keepScroll = false) {
   for (const message of conversation.messages) {
     const article = document.createElement('article');
     article.className = `message ${message.role}`;
+    if (message.id === latestAssistantId) article.classList.add('latest-assistant');
     article.dataset.messageId = message.id;
     const avatar = document.createElement('div');
     avatar.className = 'message-avatar';
@@ -679,6 +683,10 @@ function applyAppState(nextState) {
   appState = { ...appState, ...nextState };
   document.documentElement.classList.toggle('transparent-mode', appState.transparent);
   document.body.classList.toggle('transparent-mode', appState.transparent);
+  if (appState.transparent) {
+    clearTimeout(toastTimer);
+    elements.toast.classList.remove('visible');
+  }
   elements.assistantModeButton.classList.toggle('active', appState.transparent && appState.alwaysOnTop);
   elements.assistantModeButton.setAttribute('aria-pressed', String(appState.transparent && appState.alwaysOnTop));
   elements.protectionButton.setAttribute('aria-pressed', String(appState.contentProtection));
@@ -702,6 +710,11 @@ async function setAppPreferences(preferences, toastMessage = '') {
     if (toastMessage) showToast(toastMessage);
   }
   return result;
+}
+
+function toggleAssistantMode() {
+  const enabled = !(appState.transparent && appState.alwaysOnTop);
+  return setAppPreferences({ transparent: enabled, alwaysOnTop: enabled });
 }
 
 async function updateSecretState(provider) {
@@ -770,10 +783,7 @@ elements.thinkToggle.addEventListener('click', () => {
   showToast(config.think ? '已开启深度思考' : '已切换为快速回答');
 });
 elements.refreshButton.addEventListener('click', () => refreshConnection());
-elements.assistantModeButton.addEventListener('click', () => {
-  const enabled = !(appState.transparent && appState.alwaysOnTop);
-  setAppPreferences({ transparent: enabled, alwaysOnTop: enabled }, enabled ? '助手模式已开启' : '助手模式已关闭');
-});
+elements.assistantModeButton.addEventListener('click', toggleAssistantMode);
 elements.protectionButton.addEventListener('click', () => {
   setAppPreferences({ contentProtection: !appState.contentProtection }, appState.contentProtection ? '录屏保护已关闭' : '录屏保护已开启');
 });
@@ -843,12 +853,21 @@ elements.settingsForm.addEventListener('submit', async (event) => {
   await refreshConnection();
 });
 document.addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
+    event.preventDefault();
+    toggleAssistantMode();
+    return;
+  }
   if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'n') {
     event.preventDefault();
     newConversation();
   }
   if (event.key === 'Escape' && mobileHistoryOpen) closeMobileHistory();
-  if (event.key === 'Escape' && state.generating && !elements.settingsDialog.open && !elements.securityDialog.open) stopGeneration();
+  if (event.key === 'Escape' && state.generating && !elements.settingsDialog.open && !elements.securityDialog.open) {
+    stopGeneration();
+  } else if (event.key === 'Escape' && appState.transparent && !elements.settingsDialog.open && !elements.securityDialog.open) {
+    setAppPreferences({ transparent: false, alwaysOnTop: false });
+  }
 });
 window.addEventListener('resize', updateHistoryUI);
 

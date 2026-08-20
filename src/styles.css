@@ -280,10 +280,7 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
 
 .sidebar-scrim { display: none; }
 
-.transparent-mode .sidebar { background: rgba(18, 18, 18, .82); backdrop-filter: blur(18px); }
-.transparent-mode .main-panel, .transparent-mode .messages { background: rgba(24, 24, 24, .72); }
-.transparent-mode .topbar, .transparent-mode .composer-area { background: rgba(18, 18, 18, .78); backdrop-filter: blur(18px); }
-.transparent-mode .composer { background: rgba(20, 20, 20, .78); }
+.assistant-drag-region { display: none; }
 
 .toast { position: fixed; left: 50%; bottom: 18px; z-index: 20; padding: 7px 11px; color: #eee; font-size: 10px; border: 1px solid var(--border-strong); border-radius: 2px; background: #252526; box-shadow: 0 6px 20px rgba(0,0,0,.4); transform: translate(-50%, 14px); opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; }
 .toast.visible { transform: translate(-50%, 0); opacity: 1; }
@@ -327,4 +324,70 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
   .offline-banner button { padding-inline: 5px; }
   .settings-dialog, .security-dialog { width: calc(100vw - 24px); }
   .settings-dialog form, .security-dialog form { padding: 14px; }
+}
+
+/* Transparent mode is a deliberately minimal prompter: only the latest reply and input remain. */
+html.transparent-mode .app-shell { display: block; background: transparent; }
+html.transparent-mode .sidebar,
+html.transparent-mode .topbar,
+html.transparent-mode .offline-banner,
+html.transparent-mode .empty-state,
+html.transparent-mode .generation-progress,
+html.transparent-mode .sidebar-scrim { display: none !important; }
+html.transparent-mode .main-panel,
+html.transparent-mode .messages,
+html.transparent-mode .composer-area { background: transparent; border: 0; }
+html.transparent-mode .assistant-drag-region {
+  position: fixed;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 50;
+  display: block;
+  height: 24px;
+  -webkit-app-region: drag;
+}
+html.transparent-mode .messages {
+  display: flex;
+  padding: 28px 16px 0;
+  flex-direction: column;
+}
+html.transparent-mode .message-list {
+  width: min(760px, 100%);
+  max-width: 100%;
+  margin: auto auto 0;
+  padding: 12px 0;
+}
+html.transparent-mode .message.user,
+html.transparent-mode .message.assistant:not(.latest-assistant) { display: none; }
+html.transparent-mode .message.assistant {
+  display: block;
+  margin: 0;
+  -webkit-app-region: no-drag;
+}
+html.transparent-mode .message-avatar,
+html.transparent-mode .message-author { display: none; }
+html.transparent-mode .message-body { padding: 0; }
+html.transparent-mode .message.assistant .markdown-body {
+  color: #f4f4f4;
+  font-size: 15px;
+  line-height: 1.72;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, .95), 0 2px 12px rgba(0, 0, 0, .85);
+}
+html.transparent-mode .composer-area { padding: 8px 14px 14px; }
+html.transparent-mode .composer {
+  width: min(760px, 100%);
+  border-color: rgba(255, 255, 255, .22);
+  border-radius: 8px;
+  background: rgba(18, 18, 18, .76);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
+  backdrop-filter: blur(18px);
+  -webkit-app-region: no-drag;
+}
+html.transparent-mode .think-toggle { display: none; }
+html.transparent-mode .toast {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  text-shadow: 0 1px 4px #000;
 }
