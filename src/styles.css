@@ -251,12 +251,28 @@ dialog::backdrop { background: rgba(0,0,0,.65); }
 .settings-section:last-child { margin-bottom: 0; border-bottom: 0; }
 .settings-section h3 { margin: 0 0 13px; color: #d0d0d0; font-size: 12px; font-weight: 600; }
 .field-note { margin: -3px 0 0; color: #777; font-size: 9px; line-height: 1.5; }
+.model-add-row, .shortcut-row { display: flex; align-items: flex-start; gap: 6px; }
+.model-add-row .text-field, .shortcut-row .text-field { flex: 1; min-width: 0; }
+.model-add-row .inline-button, .shortcut-row .inline-button { flex: 0 0 auto; height: 34px; }
+.configured-model-list { display: flex; flex-wrap: wrap; gap: 5px; margin: -4px 0 11px; }
+.configured-model-chip { display: inline-flex; align-items: center; min-width: 0; gap: 4px; padding: 4px 6px; color: #bbb; font: 9px "SFMono-Regular", Consolas, monospace; border: 1px solid var(--border-strong); background: #202020; }
+.configured-model-chip span { max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.configured-model-chip button { padding: 0; color: #777; border: 0; background: transparent; cursor: pointer; }
+.configured-model-chip button:hover { color: var(--red); }
+.model-note { margin: -5px 0 12px; }
 .secret-status-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: -5px 0 10px; color: #858585; font-size: 9px; }
 .secret-status-row label { display: flex; align-items: center; gap: 4px; white-space: nowrap; }
 .setting-toggle { display: grid; grid-template-columns: 18px minmax(0, 1fr); align-items: center; padding: 7px 0; color: #c7c7c7; font-size: 11px; cursor: pointer; }
 .setting-toggle input { grid-row: 1 / span 2; }
 .setting-toggle small { margin-top: 2px; color: #777; font-size: 9px; }
 .prompt-field { height: 126px; min-height: 80px; padding: 8px 9px; resize: vertical; line-height: 1.5; }
+.prompt-actions, .knowledge-actions { display: flex; gap: 6px; }
+.danger-button:hover { color: var(--red); border-color: #70423b; background: #2d1f1d; }
+.shortcut-status, .knowledge-status { display: block; margin: -5px 0 3px; color: #777; font-size: 9px; line-height: 1.5; }
+.shortcut-status.recording { color: var(--yellow); }
+.knowledge-status { margin: 0 0 9px; padding: 7px 8px; border-left: 2px solid var(--green); background: #202423; }
+.knowledge-status.working { color: var(--yellow); border-left-color: var(--yellow); }
+.knowledge-status.error { color: var(--red); border-left-color: var(--red); }
 .inline-button { height: 26px; padding: 0 8px; color: #aaa; font-size: 10px; border: 1px solid var(--border-strong); border-radius: 2px; background: transparent; cursor: pointer; }
 .inline-button:hover { color: #fff; background: var(--hover); }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; margin-top: 20px; }
@@ -369,21 +385,28 @@ html.transparent-mode .message-avatar,
 html.transparent-mode .message-author { display: none; }
 html.transparent-mode .message-body { padding: 0; }
 html.transparent-mode .message.assistant .markdown-body {
+  padding: 10px 12px;
   color: #f4f4f4;
   font-size: 15px;
   line-height: 1.72;
-  text-shadow: 0 1px 3px rgba(0, 0, 0, .95), 0 2px 12px rgba(0, 0, 0, .85);
+  background: #000;
+  text-shadow: none;
 }
 html.transparent-mode .composer-area { padding: 8px 14px 14px; }
 html.transparent-mode .composer {
   width: min(760px, 100%);
-  border-color: rgba(255, 255, 255, .22);
-  border-radius: 8px;
-  background: rgba(18, 18, 18, .76);
-  box-shadow: 0 8px 28px rgba(0, 0, 0, .28);
-  backdrop-filter: blur(18px);
+  border: 1px solid #333;
+  border-radius: 0;
+  background: #000;
+  box-shadow: none;
+  backdrop-filter: none;
   -webkit-app-region: no-drag;
 }
+html.transparent-mode .composer:focus-within { border-color: #666; }
+html.transparent-mode .code-block,
+html.transparent-mode .markdown-body code,
+html.transparent-mode .send-button,
+html.transparent-mode .stop-button { border-radius: 0; }
 html.transparent-mode .think-toggle { display: none; }
 html.transparent-mode .toast {
   border: 0;

@@ -7,20 +7,29 @@ const SYSTEM_PROMPT = `你是一个极简、直接的本地编程助手。严格
 6. 当用户要求编写代码但没有指定编程语言时，默认使用 Python。
 7. 使用与用户相同的语言回答。若用户的最新指令与以上默认规则冲突，以用户的明确指令为准。`;
 
-function normalizeSystemPrompt(customPrompt) {
+function normalizeSystemPrompt(customPrompt, disabled = false) {
+  if (disabled) return '';
   if (typeof customPrompt !== 'string') return SYSTEM_PROMPT;
   const trimmed = customPrompt.trim();
   return trimmed ? trimmed.slice(0, 20000) : SYSTEM_PROMPT;
 }
 
-function buildModelMessages(messages, customPrompt = '') {
+function buildModelMessages(messages, customPrompt = '', options = {}) {
   const safeMessages = Array.isArray(messages)
     ? messages
       .filter((message) => ['user', 'assistant'].includes(message?.role))
       .map(({ role, content }) => ({ role, content: String(content ?? '') }))
     : [];
 
-  return [{ role: 'system', content: normalizeSystemPrompt(customPrompt) }, ...safeMessages];
+  const systemPrompt = normalizeSystemPrompt(customPrompt, options.disabled === true);
+  const context = typeof options.knowledgeContext === 'string' ? options.knowledgeContext.trim() : '';
+  const result = [];
+  if (systemPrompt) result.push({ role: 'system', content: systemPrompt });
+  if (context) result.push({
+    role: 'system',
+    content: `以下内容来自用户的本地个人题库。优先依据它回答；若资料不足或冲突，要明确说明，不要编造。\n\n${context}`
+  });
+  return [...result, ...safeMessages];
 }
 
 module.exports = { SYSTEM_PROMPT, normalizeSystemPrompt, buildModelMessages };

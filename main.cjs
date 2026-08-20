@@ -1,9 +1,16 @@
-const { app, BrowserWindow, ipcMain, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, dialog, globalShortcut, ipcMain, safeStorage, shell } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const http = require('node:http');
 const https = require('node:https');
 const { buildModelMessages, SYSTEM_PROMPT } = require('./src/system-prompt.cjs');
+const {
+  clear: clearKnowledge,
+  importItems: importKnowledgeItems,
+  parseKnowledgeFile,
+  retrieve: retrieveKnowledge,
+  status: knowledgeStatus
+} = require('./src/knowledge-base.cjs');
 const { analyzeStreamPacket } = require('./src/ollama-progress.cjs');
 const { buildChatRequest } = require('./src/ollama-request.cjs');
 const {
@@ -21,11 +28,16 @@ let mainWindow = null;
 let windowPreferences = {
   alwaysOnTop: false,
   transparent: false,
-  contentProtection: true
+  contentProtection: true,
+  assistantShortcut: 'Command+Shift+A'
 };
 
 function jsonFile(name) {
   return path.join(app.getPath('userData'), name);
+}
+
+function knowledgeDatabaseFile() {
+  return path.join(app.getPath('userData'), 'knowledge-base.sqlite3');
 }
 
 function readJsonFile(filePath, fallback) {
@@ -48,7 +60,10 @@ function loadWindowPreferences() {
   windowPreferences = {
     alwaysOnTop: saved.alwaysOnTop === true,
     transparent: saved.transparent === true,
-    contentProtection: saved.contentProtection !== false
+    contentProtection: saved.contentProtection !== false,
+    assistantShortcut: typeof saved.assistantShortcut === 'string' && saved.assistantShortcut.trim()
+      ? saved.assistantShortcut.trim()
+      : 'Command+Shift+A'
   };
 }
 
@@ -59,11 +74,40 @@ function saveWindowPreferences() {
 function applyWindowPreferences(window) {
   if (!window || window.isDestroyed()) return;
   window.setContentProtection(windowPreferences.contentProtection);
-  window.setAlwaysOnTop(windowPreferences.alwaysOnTop, 'floating');
-  window.setBackgroundColor(windowPreferences.transparent ? '#00000000' : '#1e1e1e');
+  const floating = windowPreferences.transparent || windowPreferences.alwaysOnTop;
+  window.setAlwaysOnTop(floating, 'floating');
+  // Keep the native surface transparent at all times. The normal renderer paints its
+  // own opaque background, avoiding one black compositor frame when modes change.
+  window.setBackgroundColor('#00000000');
+  window.setHasShadow(!windowPreferences.transparent);
   if (process.platform === 'darwin') {
     window.setWindowButtonVisibility(!windowPreferences.transparent);
-    window.setVisibleOnAllWorkspaces(windowPreferences.alwaysOnTop, { visibleOnFullScreen: true });
+    window.setVisibleOnAllWorkspaces(floating, { visibleOnFullScreen: true });
+  }
+}
+
+function toggleAssistantModeFromMain() {
+  windowPreferences.transparent = !windowPreferences.transparent;
+  windowPreferences.alwaysOnTop = windowPreferences.transparent;
+  saveWindowPreferences();
+  applyWindowPreferences(mainWindow);
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('app:preferences-changed', publicAppState());
+    if (!mainWindow.isVisible()) mainWindow.show();
+  }
+}
+
+function registerAssistantShortcut() {
+  globalShortcut.unregisterAll();
+  const shortcut = windowPreferences.assistantShortcut;
+  if (!shortcut) return { ok: true, registered: false };
+  try {
+    const registered = globalShortcut.register(shortcut, toggleAssistantModeFromMain);
+    return registered
+      ? { ok: true, registered: true }
+      : { ok: false, registered: false, error: '快捷键已被其他应用占用' };
+  } catch (error) {
+    return { ok: false, registered: false, error: `快捷键无效：${error.message}` };
   }
 }
 
@@ -119,7 +163,7 @@ function createWindow() {
     show: false,
     transparent: true,
     title: 'Veil 本地对话',
-    backgroundColor: windowPreferences.transparent ? '#00000000' : '#1e1e1e',
+    backgroundColor: '#00000000',
     titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : 'default',
     trafficLightPosition: { x: 18, y: 18 },
     webPreferences: {
@@ -178,6 +222,83 @@ function requestJson(url, options = {}) {
     if (options.body) request.write(options.body);
     request.end();
   });
+}
+
+async function ollamaEmbeddings(endpoint, model, inputs) {
+  const body = JSON.stringify({ model, input: inputs, truncate: true });
+  const data = await requestJson(ollamaEndpoint(endpoint, '/api/embed'), {
+    method: 'POST',
+    timeout: 120000,
+    headers: {
+      'content-type': 'application/json',
+      'content-length': Buffer.byteLength(body)
+    },
+    body
+  });
+  if (!Array.isArray(data.embeddings) || data.embeddings.length !== inputs.length) {
+    throw new Error('Embedding 模型没有返回完整向量');
+  }
+  return data.embeddings;
+}
+
+function rerankerPrompt(query, item) {
+  const document = [item.title, item.question, item.options, item.answer, item.explanation]
+    .filter(Boolean)
+    .join('\n')
+    .slice(0, 12000);
+  return `<|im_start|>system\nJudge whether the Document meets the requirements based on the Query and the Instruct provided. Note that the answer can only be "yes" or "no".<|im_end|>\n<|im_start|>user\n<Instruct>: Given the user query, retrieve question-bank passages that answer the query\n<Query>: ${query}\n<Document>: ${document}<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n`;
+}
+
+function relevanceProbability(data) {
+  const candidates = data?.logprobs?.[0]?.top_logprobs || data?.logprobs?.[0]?.topLogprobs || [];
+  const byToken = new Map(candidates.map((entry) => [String(entry.token || '').trim().toLowerCase(), Number(entry.logprob)]));
+  const yes = byToken.get('yes');
+  const no = byToken.get('no');
+  if (Number.isFinite(yes) && Number.isFinite(no)) {
+    const maximum = Math.max(yes, no);
+    const yesExp = Math.exp(yes - maximum);
+    return yesExp / (yesExp + Math.exp(no - maximum));
+  }
+  return String(data?.response || '').trim().toLowerCase().startsWith('yes') ? 1 : 0;
+}
+
+async function ollamaRerank(endpoint, model, query, items, limit) {
+  const scored = [];
+  for (const item of items) {
+    const body = JSON.stringify({
+      model,
+      prompt: rerankerPrompt(query, item),
+      raw: true,
+      stream: false,
+      keep_alive: '45s',
+      logprobs: true,
+      top_logprobs: 20,
+      options: { temperature: 0, num_predict: 1 }
+    });
+    const data = await requestJson(ollamaEndpoint(endpoint, '/api/generate'), {
+      method: 'POST',
+      timeout: 120000,
+      headers: {
+        'content-type': 'application/json',
+        'content-length': Buffer.byteLength(body)
+      },
+      body
+    });
+    scored.push({ ...item, rerankerScore: relevanceProbability(data) });
+  }
+  return scored.sort((left, right) => right.rerankerScore - left.rerankerScore || right.score - left.score).slice(0, limit);
+}
+
+function knowledgeContext(items) {
+  if (!Array.isArray(items) || !items.length) return '';
+  return items.map((item, index) => [
+    `【本地题库 ${index + 1}${item.subject ? ` · ${item.subject}` : ''}】`,
+    item.title && item.title !== item.question ? `标题：${item.title}` : '',
+    `题目：${item.question}`,
+    item.options ? `选项：\n${item.options}` : '',
+    item.answer ? `答案：${item.answer}` : '',
+    item.explanation ? `解析：${item.explanation}` : ''
+  ].filter(Boolean).join('\n')).join('\n\n');
 }
 
 function errorMessage(rawBody, statusCode) {
@@ -354,6 +475,7 @@ function publicAppState() {
     contentProtection: windowPreferences.contentProtection,
     alwaysOnTop: windowPreferences.alwaysOnTop,
     transparent: windowPreferences.transparent,
+    assistantShortcut: windowPreferences.assistantShortcut,
     electronVersion: process.versions.electron,
     defaultSystemPrompt: SYSTEM_PROMPT
   };
@@ -363,12 +485,31 @@ function registerIpc() {
   ipcMain.handle('app:state', () => publicAppState());
 
   ipcMain.handle('app:set-preferences', (_event, preferences) => {
+    const previousShortcut = windowPreferences.assistantShortcut;
     for (const key of ['alwaysOnTop', 'transparent', 'contentProtection']) {
       if (typeof preferences?.[key] === 'boolean') windowPreferences[key] = preferences[key];
     }
+    if (windowPreferences.transparent) windowPreferences.alwaysOnTop = true;
+    if (typeof preferences?.assistantShortcut === 'string') {
+      windowPreferences.assistantShortcut = preferences.assistantShortcut.trim();
+    }
     saveWindowPreferences();
     applyWindowPreferences(mainWindow);
-    return { ok: true, ...publicAppState() };
+    let shortcutState = registerAssistantShortcut();
+    if (!shortcutState.ok && windowPreferences.assistantShortcut !== previousShortcut) {
+      windowPreferences.assistantShortcut = previousShortcut;
+      saveWindowPreferences();
+      const restoration = registerAssistantShortcut();
+      shortcutState = { ...shortcutState, registered: restoration.registered };
+    }
+    const result = {
+      ok: true,
+      ...publicAppState(),
+      shortcutRegistered: shortcutState.registered,
+      shortcutError: shortcutState.ok ? '' : shortcutState.error
+    };
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:preferences-changed', result);
+    return result;
   });
 
   ipcMain.handle('provider:secret-state', (_event, config) => {
@@ -439,7 +580,10 @@ function registerIpc() {
     }
 
     try {
-      const modelMessages = buildModelMessages(messages, payload?.systemPrompt);
+      const modelMessages = buildModelMessages(messages, payload?.systemPrompt, {
+        disabled: payload?.disableSystemPrompt === true,
+        knowledgeContext: knowledgeContext(payload?.knowledgeItems)
+      });
       let result;
       if (provider === 'ollama') {
         result = await streamOllama({ endpoint, model, messages: modelMessages, think, requestId, sender: event.sender });
@@ -477,6 +621,82 @@ function registerIpc() {
     return { ok: true };
   });
 
+  ipcMain.handle('knowledge:status', async () => {
+    try {
+      return { ok: true, ...(await knowledgeStatus(knowledgeDatabaseFile())) };
+    } catch (error) {
+      return { ok: false, error: error.message, count: 0, embedded: 0 };
+    }
+  });
+
+  ipcMain.handle('knowledge:import', async (event, config) => {
+    const selected = await dialog.showOpenDialog(mainWindow, {
+      title: '导入个人题库',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '题库文件', extensions: ['json', 'jsonl', 'ndjson', 'csv', 'txt', 'md'] }
+      ]
+    });
+    if (selected.canceled || !selected.filePaths.length) return { ok: false, canceled: true };
+    try {
+      const items = selected.filePaths.flatMap(parseKnowledgeFile);
+      if (!items.length) throw new Error('文件中没有可识别的题目');
+      const endpoint = config?.endpoint || 'http://127.0.0.1:11434';
+      const embeddingModel = config?.embeddingModel || 'veil-qwen3-embedding:0.6b-q8';
+      const imported = await importKnowledgeItems(
+        knowledgeDatabaseFile(),
+        items,
+        (inputs) => ollamaEmbeddings(endpoint, embeddingModel, inputs),
+        (progress) => {
+          if (!event.sender.isDestroyed()) event.sender.send('knowledge:progress', progress);
+        }
+      );
+      return { ok: true, imported, ...(await knowledgeStatus(knowledgeDatabaseFile())) };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
+  ipcMain.handle('knowledge:retrieve', async (_event, config) => {
+    try {
+      const query = String(config?.query || '').trim();
+      if (!query) return { ok: true, items: [] };
+      const endpoint = config?.endpoint || 'http://127.0.0.1:11434';
+      const embeddingModel = config?.embeddingModel || 'veil-qwen3-embedding:0.6b-q8';
+      const [queryEmbedding] = await ollamaEmbeddings(endpoint, embeddingModel, [query]);
+      const limit = Math.max(1, Math.min(Number(config?.limit) || 5, 10));
+      const candidateLimit = config?.rerankerEnabled === true ? Math.min(10, Math.max(8, limit * 2)) : limit;
+      let items = await retrieveKnowledge(knowledgeDatabaseFile(), query, queryEmbedding, candidateLimit);
+      let rerankerWarning = '';
+      if (config?.rerankerEnabled === true && items.length > 1) {
+        try {
+          items = await ollamaRerank(
+            endpoint,
+            config?.rerankerModel || 'veil-qwen3-reranker:0.6b-int8',
+            query,
+            items,
+            limit
+          );
+        } catch (error) {
+          rerankerWarning = error.message;
+          items = items.slice(0, limit);
+        }
+      }
+      return { ok: true, items, rerankerWarning };
+    } catch (error) {
+      return { ok: false, error: error.message, items: [] };
+    }
+  });
+
+  ipcMain.handle('knowledge:clear', async () => {
+    try {
+      await clearKnowledge(knowledgeDatabaseFile());
+      return { ok: true, count: 0, embedded: 0 };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('shell:open-external', async (_event, rawUrl) => {
     let url;
     try {
@@ -496,12 +716,14 @@ app.whenReady().then(() => {
   loadWindowPreferences();
   registerIpc();
   mainWindow = createWindow();
+  registerAssistantShortcut();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) mainWindow = createWindow();
   });
 });
 
 app.on('before-quit', () => {
+  globalShortcut.unregisterAll();
   for (const state of activeRequests.values()) {
     state.stopped = true;
     state.request?.destroy();

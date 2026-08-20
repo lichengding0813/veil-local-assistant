@@ -31,6 +31,8 @@ test('assistant window, capture protection, and system prompt are configurable',
   assert.match(main, /setAlwaysOnTop\(/);
   assert.match(main, /setContentProtection\(/);
   assert.match(main, /setWindowButtonVisibility\(!windowPreferences\.transparent\)/);
+  assert.match(main, /setHasShadow\(!windowPreferences\.transparent\)/);
+  assert.match(main, /globalShortcut\.register/);
   assert.match(html, /id="transparent-toggle"/);
   assert.match(html, /id="content-protection-toggle"/);
   assert.match(html, /id="system-prompt-input"/);
@@ -42,7 +44,18 @@ test('transparent mode is a minimal prompter with keyboard escape', () => {
   assert.match(css, /transparent-mode \.topbar,[\s\S]*?display:\s*none !important/);
   assert.match(css, /transparent-mode \.message\.user,[\s\S]*?display:\s*none/);
   assert.match(css, /transparent-mode \.message\.assistant:not\(\.latest-assistant\)/);
-  assert.match(css, /transparent-mode \.composer\s*\{[\s\S]*?background:\s*rgba/);
+  assert.match(css, /transparent-mode \.composer\s*\{[\s\S]*?border-radius:\s*0;[\s\S]*?background:\s*#000/);
+  assert.match(css, /transparent-mode \.message\.assistant \.markdown-body\s*\{[\s\S]*?background:\s*#000/);
   assert.match(renderer, /event\.key === 'Escape' && appState\.transparent/);
-  assert.match(renderer, /event\.shiftKey && event\.key\.toLowerCase\(\) === 'a'/);
+  assert.match(renderer, /acceleratorFromKeyboardEvent/);
+});
+
+test('unifies local and configured API models and exposes a private SQLite knowledge base', () => {
+  assert.match(html, /id="api-model-list"/);
+  assert.match(html, /id="add-api-model-button"/);
+  assert.match(renderer, /modelTargets = new Map/);
+  assert.match(main, /knowledge-base\.sqlite3/);
+  assert.match(main, /ipcMain\.handle\('knowledge:import'/);
+  assert.match(html, /id="knowledge-enabled-toggle"/);
+  assert.match(html, /id="reranker-model-input"/);
 });

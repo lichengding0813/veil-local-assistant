@@ -2,10 +2,10 @@ const STORAGE_KEY = 'veil-local-chat-state-v1';
 const CONFIG_KEY = 'veil-local-chat-config-v1';
 
 const PROFILE_DEFAULTS = Object.freeze({
-  ollama: { endpoint: 'http://127.0.0.1:11434', model: '' },
-  gemini: { endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.7-flash' },
-  deepseek: { endpoint: 'https://api.deepseek.com', model: 'deepseek-v4-flash' },
-  openai: { endpoint: 'https://api.openai.com/v1', model: '' }
+  ollama: { endpoint: 'http://127.0.0.1:11434', model: '', models: [] },
+  gemini: { endpoint: 'https://generativelanguage.googleapis.com/v1beta/openai', model: 'gemini-3.7-flash', models: ['gemini-3.7-flash'] },
+  deepseek: { endpoint: 'https://api.deepseek.com', model: 'deepseek-v4-flash', models: ['deepseek-v4-flash'] },
+  openai: { endpoint: 'https://api.openai.com/v1', model: '', models: [] }
 });
 
 const PROVIDER_LABELS = Object.freeze({
@@ -51,6 +51,8 @@ const elements = {
   endpointInput: document.querySelector('#endpoint-input'),
   apiSettings: document.querySelector('#api-settings'),
   apiModelInput: document.querySelector('#api-model-input'),
+  apiModelList: document.querySelector('#api-model-list'),
+  addApiModelButton: document.querySelector('#add-api-model-button'),
   apiKeyInput: document.querySelector('#api-key-input'),
   apiKeyStatus: document.querySelector('#api-key-status'),
   clearApiKey: document.querySelector('#clear-api-key'),
@@ -59,6 +61,18 @@ const elements = {
   contentProtectionToggle: document.querySelector('#content-protection-toggle'),
   systemPromptInput: document.querySelector('#system-prompt-input'),
   restoreSystemPromptButton: document.querySelector('#restore-system-prompt-button'),
+  clearSystemPromptButton: document.querySelector('#clear-system-prompt-button'),
+  assistantShortcutInput: document.querySelector('#assistant-shortcut-input'),
+  recordShortcutButton: document.querySelector('#record-shortcut-button'),
+  resetShortcutButton: document.querySelector('#reset-shortcut-button'),
+  shortcutStatus: document.querySelector('#shortcut-status'),
+  knowledgeEnabledToggle: document.querySelector('#knowledge-enabled-toggle'),
+  embeddingModelInput: document.querySelector('#embedding-model-input'),
+  rerankerEnabledToggle: document.querySelector('#reranker-enabled-toggle'),
+  rerankerModelInput: document.querySelector('#reranker-model-input'),
+  knowledgeStatus: document.querySelector('#knowledge-status'),
+  importKnowledgeButton: document.querySelector('#import-knowledge-button'),
+  clearKnowledgeButton: document.querySelector('#clear-knowledge-button'),
   offlineBanner: document.querySelector('#offline-banner'),
   offlineMessage: document.querySelector('#offline-message'),
   offlineSettingsButton: document.querySelector('#offline-settings-button'),
@@ -110,9 +124,17 @@ function loadState() {
 function profileFromSaved(saved, provider) {
   const defaults = PROFILE_DEFAULTS[provider];
   const profile = saved?.profiles?.[provider] || {};
+  const savedModels = Array.isArray(profile.models) ? profile.models : [profile.model];
+  const models = [...new Set(savedModels.filter((model) => typeof model === 'string' && model.trim()).map((model) => model.trim()))];
+  if (!models.length && defaults.models.length) models.push(...defaults.models);
+  const selectedModel = typeof profile.model === 'string' && profile.model.trim()
+    ? profile.model.trim()
+    : (models[0] || defaults.model);
+  if (selectedModel && !models.includes(selectedModel)) models.unshift(selectedModel);
   return {
     endpoint: typeof profile.endpoint === 'string' && profile.endpoint ? profile.endpoint : defaults.endpoint,
-    model: typeof profile.model === 'string' ? profile.model : defaults.model
+    model: selectedModel,
+    models
   };
 }
 
@@ -125,7 +147,8 @@ function loadConfig() {
     if (!saved.profiles && (saved.endpoint || saved.model)) {
       profiles.ollama = {
         endpoint: saved.endpoint || PROFILE_DEFAULTS.ollama.endpoint,
-        model: saved.model || ''
+        model: saved.model || '',
+        models: saved.model ? [saved.model] : []
       };
     }
     return {
@@ -133,6 +156,18 @@ function loadConfig() {
       profiles,
       think: saved.think === true,
       systemPrompt: typeof saved.systemPrompt === 'string' ? saved.systemPrompt : '',
+      systemPromptDisabled: saved.systemPromptDisabled === true,
+      knowledge: {
+        enabled: saved.knowledge?.enabled === true,
+        embeddingModel: typeof saved.knowledge?.embeddingModel === 'string' && saved.knowledge.embeddingModel.trim()
+          ? saved.knowledge.embeddingModel.trim()
+          : 'veil-qwen3-embedding:0.6b-q8',
+        rerankerEnabled: saved.knowledge?.rerankerEnabled !== false,
+        rerankerModel: typeof saved.knowledge?.rerankerModel === 'string' && saved.knowledge.rerankerModel.trim()
+          ? saved.knowledge.rerankerModel.trim()
+          : 'veil-qwen3-reranker:0.6b-int8',
+        topK: 5
+      },
       historyCollapsed: saved.historyCollapsed === true,
       archivesOpen: saved.archivesOpen === true
     };
@@ -142,6 +177,14 @@ function loadConfig() {
       profiles: structuredClone(PROFILE_DEFAULTS),
       think: false,
       systemPrompt: '',
+      systemPromptDisabled: false,
+      knowledge: {
+        enabled: false,
+        embeddingModel: 'veil-qwen3-embedding:0.6b-q8',
+        rerankerEnabled: true,
+        rerankerModel: 'veil-qwen3-reranker:0.6b-int8',
+        topK: 5
+      },
       historyCollapsed: false,
       archivesOpen: false
     };
@@ -155,7 +198,8 @@ let appState = {
   alwaysOnTop: false,
   transparent: false,
   electronVersion: '—',
-  defaultSystemPrompt: ''
+  defaultSystemPrompt: '',
+  assistantShortcut: 'Command+Shift+A'
 };
 let connectionState = 'checking';
 let thinkingSupported = null;
@@ -163,6 +207,11 @@ let modelInspectionSequence = 0;
 let mobileHistoryOpen = false;
 let toastTimer;
 let progressTimer;
+let modelTargets = new Map();
+let providerModelDrafts = {};
+let recordingShortcut = false;
+let shortcutDraft = 'Command+Shift+A';
+let systemPromptDisabledDraft = false;
 
 function activeProfile() {
   return config.profiles[config.provider];
@@ -226,7 +275,10 @@ function updateProgressUI() {
 
   let stage = config.provider === 'ollama' ? '正在连接 Ollama' : `正在连接 ${PROVIDER_LABELS[config.provider]} API`;
   let detail = '正在发送请求，模型仍在工作';
-  if (progress.phase === 'processing') {
+  if (progress.phase === 'retrieving') {
+    stage = '正在检索本地题库';
+    detail = '正在进行关键词与向量混合检索';
+  } else if (progress.phase === 'processing') {
     stage = '正在处理上下文';
     detail = progress.thinkEnabled
       ? '深度思考已开启，正在等待首个 token'
@@ -406,48 +458,72 @@ function updateConnectionUI(status, label) {
 }
 
 async function refreshConnection({ quiet = false } = {}) {
-  const profile = activeProfile();
   updateConnectionUI('checking', '正在检测');
-  const result = await window.localLLM.checkConnection({
-    provider: config.provider,
-    endpoint: profile.endpoint,
-    model: profile.model
-  });
-  if (!result.ok) {
-    updateConnectionUI('offline', config.provider === 'ollama' ? '未连接' : '未配置');
-    modelInspectionSequence += 1;
-    thinkingSupported = false;
-    updateThinkUI();
-    elements.offlineBanner.hidden = false;
-    elements.offlineMessage.textContent = result.error || '模型服务不可用';
-    elements.modelSelect.innerHTML = '<option value="">无可用模型</option>';
-    if (!quiet) showToast(result.error || '无法连接模型服务');
-    return false;
+  const checks = await Promise.all(Object.keys(PROFILE_DEFAULTS).map(async (provider) => {
+    const profile = config.profiles[provider];
+    if (provider !== 'ollama' && !profile.models.length) {
+      return { provider, ok: false, models: [], error: '未添加模型' };
+    }
+    const result = await window.localLLM.checkConnection({
+      provider,
+      endpoint: profile.endpoint,
+      model: profile.model || profile.models[0] || ''
+    });
+    return { provider, ...result };
+  }));
+
+  modelTargets = new Map();
+  elements.modelSelect.replaceChildren();
+  for (const result of checks) {
+    if (!result.ok) continue;
+    const profile = config.profiles[result.provider];
+    const models = result.provider === 'ollama'
+      ? result.models.filter((model) => !/(^|[-_:])(embed(ding)?|rerank(er)?)([-_:]|$)/i.test(model))
+      : profile.models;
+    if (result.provider === 'ollama') profile.models = result.models;
+    if (!models.length) continue;
+    const group = document.createElement('optgroup');
+    group.label = result.provider === 'ollama'
+      ? '本地 · Ollama'
+      : `在线 · ${PROVIDER_LABELS[result.provider]}`;
+    for (const model of models) {
+      const key = `${result.provider}\u0000${model}`;
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = model;
+      group.append(option);
+      modelTargets.set(key, { provider: result.provider, model });
+    }
+    elements.modelSelect.append(group);
   }
 
-  updateConnectionUI('online', result.statusLabel || '已连接');
-  elements.offlineBanner.hidden = true;
-  elements.modelSelect.replaceChildren();
-  if (!result.models.length) {
+  if (!modelTargets.size) {
     const option = document.createElement('option');
     option.value = '';
-    option.textContent = '未安装模型';
+    option.textContent = '无可用模型';
     elements.modelSelect.append(option);
-    profile.model = '';
+    updateConnectionUI('offline', '未连接');
+    const errors = checks.map((result) => result.error).filter(Boolean);
+    elements.offlineBanner.hidden = false;
+    elements.offlineMessage.textContent = errors[0] || '没有可用的本地或在线模型';
+    thinkingSupported = false;
+    updateThinkUI();
+    if (!quiet) showToast(elements.offlineMessage.textContent);
+    return false;
   } else {
-    result.models.forEach((model) => {
-      const option = document.createElement('option');
-      option.value = model;
-      option.textContent = model;
-      elements.modelSelect.append(option);
-    });
-    profile.model = result.models.includes(profile.model) ? profile.model : result.models[0];
-    elements.modelSelect.value = profile.model;
+    let selectedKey = `${config.provider}\u0000${activeProfile().model}`;
+    if (!modelTargets.has(selectedKey)) selectedKey = modelTargets.keys().next().value;
+    const selected = modelTargets.get(selectedKey);
+    config.provider = selected.provider;
+    activeProfile().model = selected.model;
+    elements.modelSelect.value = selectedKey;
   }
+  updateConnectionUI('online', `已连接 · ${modelTargets.size} 个模型`);
+  elements.offlineBanner.hidden = true;
   persist();
   renderMessages(true);
   await refreshThinkingCapability();
-  if (!quiet) showToast(config.provider === 'ollama' ? `已连接 ${result.models.length} 个本地模型` : `${PROVIDER_LABELS[config.provider]} API 配置已就绪`);
+  if (!quiet) showToast(`可快捷切换 ${modelTargets.size} 个本地或在线模型`);
   return true;
 }
 
@@ -650,6 +726,26 @@ async function sendMessage() {
   persist();
   renderAll();
 
+  let knowledgeItems = [];
+  if (config.knowledge.enabled) {
+    state.generating.phase = 'retrieving';
+    updateProgressUI();
+    const knowledgeResult = await window.localLLM.searchKnowledge({
+      query: content,
+      endpoint: config.profiles.ollama.endpoint,
+      embeddingModel: config.knowledge.embeddingModel,
+      rerankerEnabled: config.knowledge.rerankerEnabled,
+      rerankerModel: config.knowledge.rerankerModel,
+      limit: config.knowledge.topK
+    });
+    if (state.generating?.requestId !== requestId) return;
+    if (knowledgeResult.ok) {
+      knowledgeItems = knowledgeResult.items;
+      if (knowledgeResult.rerankerWarning) showToast('精排模型不可用，已使用混合排序');
+    }
+    else showToast(`题库检索未启用：${knowledgeResult.error}`);
+  }
+
   const messages = conversation.messages
     .filter((message) => message.id !== assistantMessage.id)
     .map(({ role, content: messageContent }) => ({ role, content: messageContent }));
@@ -660,6 +756,8 @@ async function sendMessage() {
     messages,
     think: thinkingSupported === true && config.think,
     systemPrompt: config.systemPrompt,
+    disableSystemPrompt: config.systemPromptDisabled,
+    knowledgeItems,
     requestId
   });
   if (!result.ok && state.generating?.requestId === requestId) finishGeneration(requestId);
@@ -693,6 +791,7 @@ function applyAppState(nextState) {
   elements.transparentToggle.checked = appState.transparent;
   elements.alwaysOnTopToggle.checked = appState.alwaysOnTop;
   elements.contentProtectionToggle.checked = appState.contentProtection;
+  if (!recordingShortcut) updateShortcutDraft(appState.assistantShortcut || shortcutDraft);
   elements.electronVersion.textContent = appState.electronVersion || '—';
 
   const enabled = appState.contentProtection;
@@ -704,16 +803,22 @@ function applyAppState(nextState) {
 }
 
 async function setAppPreferences(preferences, toastMessage = '') {
-  const result = await window.localLLM.setAppPreferences(preferences);
-  if (result.ok) {
-    applyAppState(result);
-    if (toastMessage) showToast(toastMessage);
+  if (typeof preferences?.transparent === 'boolean') {
+    applyAppState({
+      ...appState,
+      transparent: preferences.transparent,
+      alwaysOnTop: preferences.transparent ? true : (preferences.alwaysOnTop ?? appState.alwaysOnTop)
+    });
   }
+  const result = await window.localLLM.setAppPreferences(preferences);
+  applyAppState(result);
+  if (toastMessage) showToast(toastMessage);
+  if (result.shortcutError) showToast(result.shortcutError);
   return result;
 }
 
 function toggleAssistantMode() {
-  const enabled = !(appState.transparent && appState.alwaysOnTop);
+  const enabled = !appState.transparent;
   return setAppPreferences({ transparent: enabled, alwaysOnTop: enabled });
 }
 
@@ -726,12 +831,56 @@ async function updateSecretState(provider) {
   elements.apiKeyStatus.classList.toggle('success-text', result.hasApiKey);
 }
 
+function renderProviderModelDraft(provider) {
+  const models = providerModelDrafts[provider] || [];
+  elements.apiModelList.replaceChildren(...models.map((model) => {
+    const chip = document.createElement('span');
+    chip.className = 'configured-model-chip';
+    const label = document.createElement('span');
+    label.textContent = model;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.dataset.model = model;
+    remove.title = `移除 ${model}`;
+    remove.setAttribute('aria-label', remove.title);
+    remove.textContent = '×';
+    chip.append(label, remove);
+    return chip;
+  }));
+}
+
+function addProviderModelDraft() {
+  const provider = elements.providerSelect.value;
+  if (provider === 'ollama') return;
+  const model = elements.apiModelInput.value.trim();
+  if (!model) return;
+  providerModelDrafts[provider] ||= [];
+  if (!providerModelDrafts[provider].includes(model)) providerModelDrafts[provider].push(model);
+  elements.apiModelInput.value = '';
+  renderProviderModelDraft(provider);
+}
+
+function displayShortcut(shortcut) {
+  return String(shortcut || '未设置')
+    .replace(/CommandOrControl|Command/g, '⌘')
+    .replace(/Control/g, '⌃')
+    .replace(/Alt/g, '⌥')
+    .replace(/Shift/g, '⇧')
+    .replace(/\+/g, '');
+}
+
+function updateShortcutDraft(shortcut) {
+  shortcutDraft = shortcut;
+  elements.assistantShortcutInput.value = displayShortcut(shortcut);
+}
+
 async function fillProviderSettings() {
   const provider = elements.providerSelect.value;
   const profile = config.profiles[provider];
   elements.endpointInput.value = profile.endpoint;
   elements.apiSettings.hidden = provider === 'ollama';
-  elements.apiModelInput.value = profile.model;
+  elements.apiModelInput.value = '';
+  renderProviderModelDraft(provider);
   elements.apiKeyInput.value = '';
   elements.clearApiKey.checked = false;
   if (provider !== 'ollama') await updateSecretState(provider);
@@ -739,11 +888,84 @@ async function fillProviderSettings() {
 
 async function openSettings() {
   elements.providerSelect.value = config.provider;
-  elements.systemPromptInput.value = config.systemPrompt;
+  providerModelDrafts = Object.fromEntries(Object.entries(config.profiles).map(([provider, profile]) => [provider, [...profile.models]]));
+  systemPromptDisabledDraft = config.systemPromptDisabled;
+  elements.systemPromptInput.value = config.systemPromptDisabled
+    ? ''
+    : (config.systemPrompt || appState.defaultSystemPrompt || '');
+  updateShortcutDraft(appState.assistantShortcut || 'Command+Shift+A');
+  elements.shortcutStatus.textContent = '点击“录制”后按下新的组合键';
+  elements.shortcutStatus.classList.remove('recording');
+  elements.knowledgeEnabledToggle.checked = config.knowledge.enabled;
+  elements.embeddingModelInput.value = config.knowledge.embeddingModel;
+  elements.rerankerEnabledToggle.checked = config.knowledge.rerankerEnabled;
+  elements.rerankerModelInput.value = config.knowledge.rerankerModel;
   applyAppState(appState);
   await fillProviderSettings();
+  await refreshKnowledgeStatus();
   elements.settingsDialog.showModal();
   elements.providerSelect.focus();
+}
+
+async function refreshKnowledgeStatus() {
+  elements.knowledgeStatus.className = 'knowledge-status working';
+  elements.knowledgeStatus.textContent = '正在读取本地 SQLite 题库…';
+  const result = await window.localLLM.getKnowledgeStatus();
+  if (!result.ok) {
+    elements.knowledgeStatus.className = 'knowledge-status error';
+    elements.knowledgeStatus.textContent = result.error || '题库读取失败';
+    return;
+  }
+  elements.knowledgeStatus.className = 'knowledge-status';
+  elements.knowledgeStatus.textContent = result.count
+    ? `共 ${result.count} 条 · ${result.embedded} 条已有向量索引`
+    : '题库为空；导入后仅保存在本机 SQLite 中';
+}
+
+async function importKnowledge() {
+  const endpoint = config.profiles.ollama.endpoint;
+  const embeddingModel = elements.embeddingModelInput.value.trim() || 'veil-qwen3-embedding:0.6b-q8';
+  elements.importKnowledgeButton.disabled = true;
+  elements.knowledgeStatus.className = 'knowledge-status working';
+  elements.knowledgeStatus.textContent = '请选择题库文件…';
+  const result = await window.localLLM.importKnowledge({ endpoint, embeddingModel });
+  elements.importKnowledgeButton.disabled = false;
+  if (result.canceled) return refreshKnowledgeStatus();
+  if (!result.ok) {
+    elements.knowledgeStatus.className = 'knowledge-status error';
+    elements.knowledgeStatus.textContent = `${result.error || '导入失败'}；请确认 Ollama 已安装 ${embeddingModel}`;
+    return;
+  }
+  elements.knowledgeStatus.className = 'knowledge-status';
+  elements.knowledgeStatus.textContent = `已导入 ${result.imported} 条 · 当前共 ${result.count} 条`;
+}
+
+async function clearKnowledgeBase() {
+  if (!window.confirm('确定清空本机个人题库吗？此操作无法撤销。')) return;
+  const result = await window.localLLM.clearKnowledge();
+  if (!result.ok) {
+    elements.knowledgeStatus.className = 'knowledge-status error';
+    elements.knowledgeStatus.textContent = result.error || '清空失败';
+    return;
+  }
+  await refreshKnowledgeStatus();
+}
+
+function acceleratorFromKeyboardEvent(event) {
+  const keyAliases = {
+    ' ': 'Space', Escape: 'Esc', ArrowUp: 'Up', ArrowDown: 'Down',
+    ArrowLeft: 'Left', ArrowRight: 'Right', '+': 'Plus'
+  };
+  const rawKey = keyAliases[event.key] || event.key;
+  if (['Meta', 'Control', 'Alt', 'Shift'].includes(rawKey)) return '';
+  if (!event.metaKey && !event.ctrlKey && !event.altKey) return '';
+  const parts = [];
+  if (event.metaKey) parts.push('Command');
+  if (event.ctrlKey) parts.push('Control');
+  if (event.altKey) parts.push('Alt');
+  if (event.shiftKey) parts.push('Shift');
+  const key = rawKey.length === 1 ? rawKey.toUpperCase() : rawKey;
+  return [...parts, key].join('+');
 }
 
 function handleConversationClick(event) {
@@ -794,12 +1016,50 @@ elements.securityToggleButton.addEventListener('click', () => {
   setAppPreferences({ contentProtection: !appState.contentProtection }, appState.contentProtection ? '录屏保护已关闭' : '录屏保护已开启');
 });
 elements.providerSelect.addEventListener('change', fillProviderSettings);
+elements.addApiModelButton.addEventListener('click', addProviderModelDraft);
+elements.apiModelInput.addEventListener('keydown', (event) => {
+  if (event.key === 'Enter') {
+    event.preventDefault();
+    addProviderModelDraft();
+  }
+});
+elements.apiModelList.addEventListener('click', (event) => {
+  const button = event.target.closest('button[data-model]');
+  if (!button) return;
+  const provider = elements.providerSelect.value;
+  providerModelDrafts[provider] = (providerModelDrafts[provider] || []).filter((model) => model !== button.dataset.model);
+  renderProviderModelDraft(provider);
+});
 elements.restoreSystemPromptButton.addEventListener('click', () => {
   elements.systemPromptInput.value = appState.defaultSystemPrompt || '';
+  systemPromptDisabledDraft = false;
   showToast('已恢复内置提示词');
 });
+elements.clearSystemPromptButton.addEventListener('click', () => {
+  elements.systemPromptInput.value = '';
+  systemPromptDisabledDraft = true;
+});
+elements.systemPromptInput.addEventListener('input', () => {
+  if (elements.systemPromptInput.value.trim()) systemPromptDisabledDraft = false;
+});
+elements.recordShortcutButton.addEventListener('click', () => {
+  recordingShortcut = true;
+  elements.shortcutStatus.textContent = '请按下组合键（至少包含 ⌘、⌃ 或 ⌥）…';
+  elements.shortcutStatus.classList.add('recording');
+});
+elements.resetShortcutButton.addEventListener('click', () => {
+  recordingShortcut = false;
+  updateShortcutDraft('Command+Shift+A');
+  elements.shortcutStatus.textContent = '已恢复默认快捷键，保存后生效';
+  elements.shortcutStatus.classList.remove('recording');
+});
+elements.importKnowledgeButton.addEventListener('click', importKnowledge);
+elements.clearKnowledgeButton.addEventListener('click', clearKnowledgeBase);
 elements.modelSelect.addEventListener('change', () => {
-  activeProfile().model = elements.modelSelect.value;
+  const target = modelTargets.get(elements.modelSelect.value);
+  if (!target) return;
+  config.provider = target.provider;
+  activeProfile().model = target.model;
   persist();
   renderMessages(true);
   refreshThinkingCapability();
@@ -832,7 +1092,16 @@ elements.settingsForm.addEventListener('submit', async (event) => {
   const provider = elements.providerSelect.value;
   const profile = config.profiles[provider];
   profile.endpoint = elements.endpointInput.value.trim().replace(/\/$/, '');
-  if (provider !== 'ollama') profile.model = elements.apiModelInput.value.trim();
+  if (provider !== 'ollama') {
+    addProviderModelDraft();
+  }
+  for (const remoteProvider of ['gemini', 'deepseek', 'openai']) {
+    const remoteProfile = config.profiles[remoteProvider];
+    remoteProfile.models = [...(providerModelDrafts[remoteProvider] || [])];
+    remoteProfile.model = remoteProfile.models.includes(remoteProfile.model)
+      ? remoteProfile.model
+      : (remoteProfile.models[0] || '');
+  }
 
   if (provider !== 'ollama') {
     await window.localLLM.saveSecret({
@@ -843,17 +1112,34 @@ elements.settingsForm.addEventListener('submit', async (event) => {
   }
   config.provider = provider;
   config.systemPrompt = elements.systemPromptInput.value.trim();
+  config.systemPromptDisabled = systemPromptDisabledDraft || !config.systemPrompt;
+  config.knowledge.enabled = elements.knowledgeEnabledToggle.checked;
+  config.knowledge.embeddingModel = elements.embeddingModelInput.value.trim() || 'veil-qwen3-embedding:0.6b-q8';
+  config.knowledge.rerankerEnabled = elements.rerankerEnabledToggle.checked;
+  config.knowledge.rerankerModel = elements.rerankerModelInput.value.trim() || 'veil-qwen3-reranker:0.6b-int8';
   persist();
   await setAppPreferences({
     transparent: elements.transparentToggle.checked,
     alwaysOnTop: elements.alwaysOnTopToggle.checked,
-    contentProtection: elements.contentProtectionToggle.checked
+    contentProtection: elements.contentProtectionToggle.checked,
+    assistantShortcut: shortcutDraft
   });
   elements.settingsDialog.close();
   await refreshConnection();
 });
 document.addEventListener('keydown', (event) => {
-  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'a') {
+  if (recordingShortcut) {
+    event.preventDefault();
+    event.stopPropagation();
+    const accelerator = acceleratorFromKeyboardEvent(event);
+    if (!accelerator) return;
+    recordingShortcut = false;
+    updateShortcutDraft(accelerator);
+    elements.shortcutStatus.textContent = `将使用 ${displayShortcut(accelerator)}，保存后生效`;
+    elements.shortcutStatus.classList.remove('recording');
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'a' && !appState.assistantShortcut) {
     event.preventDefault();
     toggleAssistantMode();
     return;
@@ -874,7 +1160,7 @@ window.addEventListener('resize', updateHistoryUI);
 window.localLLM.onChatProgress(({ requestId, phase, characters = 0 }) => {
   const progress = state.generating;
   if (progress?.requestId !== requestId) return;
-  if (phase === 'processing' && progress.phase === 'preparing') progress.phase = 'processing';
+  if (phase === 'processing' && !['thinking', 'answering'].includes(progress.phase)) progress.phase = 'processing';
   else if (phase === 'thinking' && progress.phase !== 'answering') {
     progress.phase = 'thinking';
     progress.thinkingCharacters += characters;
@@ -913,6 +1199,17 @@ window.localLLM.onChatError(({ requestId, error }) => {
   if (assistant && !assistant.content) assistant.content = `生成失败：${error}`;
   showToast(error || '生成失败');
   finishGeneration(requestId);
+});
+
+window.localLLM.onAppPreferencesChanged((nextState) => applyAppState(nextState));
+window.localLLM.onKnowledgeProgress(({ phase, completed, total }) => {
+  const action = phase === 'embedding' ? '正在生成向量' : '正在写入 SQLite';
+  elements.knowledgeStatus.className = 'knowledge-status working';
+  elements.knowledgeStatus.textContent = `${action} · ${completed}/${total}`;
+});
+elements.settingsDialog.addEventListener('close', () => {
+  recordingShortcut = false;
+  elements.shortcutStatus.classList.remove('recording');
 });
 
 async function initialize() {

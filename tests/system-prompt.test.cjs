@@ -33,3 +33,12 @@ test('does not allow conversation messages to replace the system prompt', () => 
     { role: 'user', content: '123' }
   ]);
 });
+
+test('can explicitly disable the built-in prompt and append private knowledge context', () => {
+  const disabled = buildModelMessages([{ role: 'user', content: 'hi' }], '', { disabled: true });
+  assert.deepEqual(disabled, [{ role: 'user', content: 'hi' }]);
+
+  const augmented = buildModelMessages([], '', { knowledgeContext: '题目：2 + 2\n答案：4' });
+  assert.equal(augmented.filter((message) => message.role === 'system').length, 2);
+  assert.match(augmented[1].content, /本地个人题库/);
+});

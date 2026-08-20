@@ -63,8 +63,8 @@
             </div>
             <label class="model-select-wrap">
               <span class="sr-only">选择模型</span>
-              <select id="model-select" aria-label="选择本地模型">
-                <option value="">检测本地模型…</option>
+              <select id="model-select" aria-label="快捷切换本地或在线模型">
+                <option value="">检测已配置模型…</option>
               </select>
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
             </label>
@@ -154,8 +154,13 @@
             <input class="text-field" id="endpoint-input" name="endpoint" type="url" required spellcheck="false">
 
             <div id="api-settings" hidden>
-              <label class="field-label" for="api-model-input">模型名称</label>
-              <input class="text-field" id="api-model-input" name="model" type="text" spellcheck="false" autocomplete="off">
+              <label class="field-label" for="api-model-input">可用模型</label>
+              <div class="model-add-row">
+                <input class="text-field" id="api-model-input" name="model" type="text" spellcheck="false" autocomplete="off" placeholder="输入模型名称，例如 deepseek-v4-pro">
+                <button class="inline-button" id="add-api-model-button" type="button">添加</button>
+              </div>
+              <div class="configured-model-list" id="api-model-list"></div>
+              <p class="field-note model-note">同一服务共用一个 API Key；模型名称完全由你添加，不限制版本。</p>
 
               <label class="field-label" for="api-key-input">API Key</label>
               <input class="text-field" id="api-key-input" name="apiKey" type="password" spellcheck="false" autocomplete="new-password" placeholder="留空则保留已保存的密钥">
@@ -169,16 +174,42 @@
 
           <section class="settings-section">
             <h3>助手窗口</h3>
-            <label class="setting-toggle"><input id="transparent-toggle" type="checkbox"><span>透明提词器模式</span><small>只保留输入框和最新回复；按 Esc 或 ⌘⇧A 退出</small></label>
+            <label class="setting-toggle"><input id="transparent-toggle" type="checkbox"><span>透明提词器模式</span><small>只保留黑色矩形输入框和最新回复；开启后自动置顶</small></label>
             <label class="setting-toggle"><input id="always-on-top-toggle" type="checkbox"><span>窗口置顶</span><small>始终显示在其他普通窗口上方</small></label>
             <label class="setting-toggle"><input id="content-protection-toggle" type="checkbox"><span>录屏保护</span><small>尝试阻止兼容的截屏和录屏接口捕获窗口</small></label>
+            <label class="field-label" for="assistant-shortcut-input">提词器快捷键</label>
+            <div class="shortcut-row">
+              <input class="text-field" id="assistant-shortcut-input" type="text" readonly spellcheck="false">
+              <button class="inline-button" id="record-shortcut-button" type="button">录制</button>
+              <button class="inline-button" id="reset-shortcut-button" type="button">默认</button>
+            </div>
+            <small class="shortcut-status" id="shortcut-status">点击“录制”后按下新的组合键</small>
           </section>
 
           <section class="settings-section">
             <h3>系统提示词</h3>
-            <label class="field-label" for="system-prompt-input">留空使用内置编程提示词</label>
+            <label class="field-label" for="system-prompt-input">当前生效的系统提示词</label>
             <textarea class="text-field prompt-field" id="system-prompt-input" rows="7" maxlength="20000" placeholder="在这里输入自定义系统提示词…"></textarea>
-            <button class="inline-button" id="restore-system-prompt-button" type="button">恢复内置提示词</button>
+            <div class="prompt-actions">
+              <button class="inline-button" id="restore-system-prompt-button" type="button">恢复内置提示词</button>
+              <button class="inline-button danger-button" id="clear-system-prompt-button" type="button">清空并禁用</button>
+            </div>
+          </section>
+
+          <section class="settings-section">
+            <h3>本地个人题库</h3>
+            <label class="setting-toggle"><input id="knowledge-enabled-toggle" type="checkbox"><span>回答时检索题库</span><small>SQLite 数据库只保存在本机，使用 Ollama 生成向量</small></label>
+            <label class="field-label" for="embedding-model-input">Embedding 模型</label>
+            <input class="text-field" id="embedding-model-input" type="text" spellcheck="false" value="veil-qwen3-embedding:0.6b-q8">
+            <label class="setting-toggle"><input id="reranker-enabled-toggle" type="checkbox"><span>启用精排模型</span><small>对混合召回结果进行 yes/no 概率重排；缺少模型时自动退回混合排序</small></label>
+            <label class="field-label" for="reranker-model-input">Reranker 模型</label>
+            <input class="text-field" id="reranker-model-input" type="text" spellcheck="false" value="veil-qwen3-reranker:0.6b-int8">
+            <div class="knowledge-status" id="knowledge-status">正在读取题库…</div>
+            <div class="knowledge-actions">
+              <button class="inline-button" id="import-knowledge-button" type="button">导入题库文件</button>
+              <button class="inline-button danger-button" id="clear-knowledge-button" type="button">清空题库</button>
+            </div>
+            <p class="field-note">支持 JSON、JSONL、CSV、TXT、Markdown；字段可使用 question/题目、options/选项、answer/答案、explanation/解析、subject/科目、difficulty/难度。</p>
           </section>
         </div>
         <div class="dialog-actions">
